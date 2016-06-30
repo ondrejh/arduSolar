@@ -5,9 +5,14 @@
 #define ON_TIME     ((uint32_t)(15*60000)) // minutes
 #define OFF_TIME    ((uint32_t)(5*60000))  // minutes
 
+#define SWITCH_OFF_THRESHOLD 24 // one and half degree
+#define SWITCH_ON_INTEGRAL_THRESHOLD 512 // 32 degrees per measurement
+
 OneWire ds0(10);  // on pin 10,11,12 (a 4.7K resistor is necessary)
 OneWire ds1(11);
 OneWire ds2(12);
+
+byte autoOn = 0;
 
 const byte dec_table[16] = {0,1,1,2,3,3,4,4,5,6,6,7,8,8,9,9};
 
@@ -15,6 +20,11 @@ void set_output(byte out)
 {
   digitalWrite(7,out?HIGH:LOW);
   digitalWrite(13,out?HIGH:LOW);
+}
+
+void set_led(byte out)
+{
+  digitalWrite(8,out?HIGH:LOW);
 }
 
 void decode_temp(int16_t raw, char* str)
@@ -108,33 +118,53 @@ void timerInterrupt(void) {
 
   switch(state) {
     case 0: // auto
-      if (btnedge)
-        state = 1;
+      if (btnedge) {
+        if (autoOn) {
+          state = 20; // go off
+          set_output(0);
+          set_led(0);
+        }
+        else
+          state = 10; // go on
+          set_output(1);
+          set_led(1);
+      }
+      else { // blink led, set output
+        uint8_t blTim = (byte)((uint16_t)((millis()-btnTimer)>>7)&0x1F);
+        if (autoOn) {
+          set_led(blTim&0x8);
+        }
+        else {
+          set_led(blTim==0);
+        }
+        set_output(autoOn);
+      }
       break;
-    case 1: // on
-      if (btnedge) // if button pressed go off
-        state=2;
-      if ((millis()-btnTimer)>ON_TIME) // if button not pressed for some time go auto
+    case 10: // on
+      if (btnedge) {// if button pressed go off
+        state=20;
+        set_output(0);
+        set_led(0);
+      }
+      else if ((millis()-btnTimer)>ON_TIME) { // if button not pressed for some time go auto
         state=0;
+        set_output(0);
+        set_led(0);
+      }
       break;
-    case 2: // off
-      if (btnedge) // if button pressed go on
-        state=1;
-      if ((millis()-btnTimer)>OFF_TIME) // if button not pressed for some time go auto
+    case 20: // off
+      if (btnedge) { // if button pressed go on
+        state=10;
+        set_output(1);
+        set_led(1);
+      }
+      else if ((millis()-btnTimer)>OFF_TIME) { // if button not pressed for some time go auto
         state=0;
+        set_output(0);
+        set_led(0);
+      }
       break;
   }
-  // use button rising edge
-  if (btnedge) {
-    digitalWrite(8,digitalRead(8)^1);
-  }
-
-  // output test
-  /*static uint32_t outcnt = millis();
-  if ((millis()-outcnt)>=5000) {
-    outcnt+=5000;
-    set_output(digitalRead(7)^1);
-  }*/
 }
 
 void loop(void) {
@@ -234,15 +264,33 @@ void loop(void) {
   if (present[2]) {
     decode_temp(raw[2],str);
     Serial.print(str);
-    Serial.println("C");
+    Serial.print("C");
   }
   else {
-    Serial.println("---");
+    Serial.print("---");
   }
 
   //digitalWrite(13,LOW);
   
-  if (present[0]&&present[1]&&present[2]) {
+  if (present[0]/*&&present[1]*/&&present[2]) {
+    static uint16_t integral = 0;
+    int diff = raw[2]-raw[0]-SWITCH_OFF_THRESHOLD;
+    if (diff>0) {
+      if (autoOn==0) {
+        integral+=diff;
+        if (integral>=SWITCH_ON_INTEGRAL_THRESHOLD) {
+          autoOn = 1;
+          Serial.print(", Auto ON");
+        }
+      }
+    }
+    else {
+      integral = 0;
+      if (autoOn==1) {
+        autoOn = 0;
+        Serial.print(", Auto OFF");
+      }
+    }
     while ((millis()-msTime)<CYCLE_TIME); // wait 10s
     msTime+=10000;
   }
@@ -250,4 +298,6 @@ void loop(void) {
     delay(1000);
     msTime=millis();
   }
+
+  Serial.println();
 }
