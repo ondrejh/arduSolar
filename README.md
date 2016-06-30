@@ -8,9 +8,10 @@ Arduino based solar collector switch.
 - allows temporary switch off or on by user
 - TODO: home automation connectivity
 
-Schematic:
+##Schematic:
 
 ![schema](https://github.com/ondrejh/arduSolar/blob/master/schema.png)
-How it works:
+
+##How it works:
 
 ![howitworks](https://github.com/ondrejh/arduSolar/blob/master/howitworks.png)
